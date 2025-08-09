@@ -1,0 +1,306 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="utf-8" />
+    <title>MapTimeX   安盛有限公司</title>
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <link rel="icon" href="https://upload.wikimedia.org/wikipedia/commons/4/48/Taipei_City_Emblem.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+
+    <style>
+        html, body, #viewDiv {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 100%;
+            font-family: "Segoe UI","Noto Sans TC",sans-serif;
+        }
+
+        /* ===== 右側側欄（單一滾動；可拖曳；可收合） ===== */
+        #sidePanel {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            width: 340px;
+            max-width: 92vw;
+            max-height: 92vh;
+            z-index: 100;
+            background: rgba(255,255,255,.96);
+            border-radius: 10px;
+            box-shadow: 0 8px 20px rgba(0,0,0,.22);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            backdrop-filter: blur(2px);
+            user-select: none;
+            touch-action: none;
+            font-size: 13px;
+        }
+
+        #panelHeader {
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 10px;
+            border-bottom: 1px solid #e6e6e6;
+            background: linear-gradient(#fafafa,#f3f3f3);
+            font-weight: 700;
+            cursor: grab;
+        }
+
+            #panelHeader.dragging {
+                cursor: grabbing;
+            }
+
+            #panelHeader span {
+                font-size: 14px;
+            }
+
+        #collapseBtn {
+            border: none;
+            background: transparent;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 8px;
+            line-height: 1;
+        }
+
+            #collapseBtn:hover {
+                background: rgba(0,0,0,.06);
+            }
+
+        #panelBody {
+            padding: 10px;
+            overflow: auto;
+            max-height: calc(92vh - 40px);
+        }
+
+        .section {
+            margin-bottom: 10px;
+        }
+
+            .section h4 {
+                margin: 0 0 6px 0;
+                font-size: 13px;
+                font-weight: 700;
+                color: #333;
+            }
+
+        .field {
+            margin-bottom: 8px;
+        }
+
+            .field select {
+                width: 100%;
+            }
+
+        /* 滑桿一行排版：滑桿 + 數字 */
+        .range-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+            .range-row input[type="range"] {
+                flex: 1;
+            }
+
+            .range-row .value {
+                min-width: 2.5em;
+                text-align: right;
+                color: #666;
+            }
+
+        /* ===== 圖層群組（預設收合；更緊湊） ===== */
+        #imageGroups .group {
+            border: 1px solid #e6e6e6;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            overflow: hidden;
+            background: #fff;
+        }
+
+            #imageGroups .group summary {
+                cursor: pointer;
+                position: relative;
+                padding: 8px 26px 8px 10px;
+                background: #f8f8f8;
+                font-weight: 700;
+                list-style: none;
+                user-select: none;
+                border-bottom: 1px solid #eee;
+                font-size: 13px;
+            }
+
+                #imageGroups .group summary::after {
+                    content: "▾";
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%) rotate(-90deg);
+                    opacity: .7;
+                    transition: transform .15s ease;
+                    font-size: 12px;
+                }
+
+            #imageGroups .group[open] summary::after {
+                transform: translateY(-50%) rotate(0deg);
+            }
+
+        #imageGroups .group-body {
+            display: none;
+            padding: 8px 10px;
+        }
+
+        #imageGroups .group[open] .group-body {
+            display: block;
+        }
+
+        /* 右下角座標顯示（不擋操作） */
+        #xyCoords {
+            position: absolute;
+            right: 12px;
+            bottom: 12px;
+            z-index: 90;
+            background: rgba(255,255,255,.92);
+            padding: 6px 10px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,.2);
+            font-size: 13px;
+            pointer-events: none;
+        }
+
+        /* 收合狀態（只留標題列） */
+        #sidePanel.collapsed {
+            width: auto;
+            max-height: none;
+        }
+
+            #sidePanel.collapsed #panelBody {
+                display: none;
+            }
+
+            #sidePanel.collapsed #panelHeader {
+                border-radius: 10px;
+            }
+    </style>
+</head>
+
+<body>
+    <!-- 地圖 -->
+    <div id="viewDiv"></div>
+
+    <!-- 右側側欄（單一滾動；可拖曳；可收合） -->
+    <aside id="sidePanel" aria-label="工具面板">
+        <div id="panelHeader">
+            <span>☰ 工具面板</span>
+            <button id="collapseBtn" title="收合/展開">⮝</button>
+        </div>
+
+        <div id="panelBody">
+            <!-- 底圖（移除兩個 label） -->
+            <div class="section">
+                <h4>底圖</h4>
+
+                <div class="field">
+                    <select id="basemapSelect" aria-label="底圖選擇">
+                        <option value="osm">OpenStreetMap</option>
+                        <option value="topo-vector">ESRI 地形圖</option>
+                        <option value="satellite">ESRI 影像圖</option>
+                        <option value="streets-navigation-vector">ESRI 街道圖（導航）</option>
+                    </select>
+                </div>
+
+                <div class="field range-row">
+                    <input type="range" id="basemapOpacity" min="0" max="1" step="0.1" value="1" aria-label="底圖透明度" />
+                    <span id="basemapOpacityValue" class="value">1</span>
+                </div>
+            </div>
+
+            <!-- 圖層清單（map.js 動態塞每個 ImageType 為 <details class="group">） -->
+            <div id="imageGroups" class="section" style="min-height:40px;"></div>
+        </div>
+    </aside>
+
+    <!-- 右下角固定的 XY 顯示 -->
+    <div id="xyCoords">—</div>
+
+    <!-- ArcGIS API -->
+    <script src="https://js.arcgis.com/4.29"></script>
+    <!-- 你的地圖邏輯 -->
+    <script src="@Url.Content("./js/map.js")"></script>
+
+    <!-- 面板收合 & 拖曳 -->
+    <script>
+        // 收合/展開
+        (function () {
+          const panel = document.getElementById("sidePanel");
+          const btn = document.getElementById("collapseBtn");
+          btn.addEventListener("click", () => {
+            panel.classList.toggle("collapsed");
+            btn.textContent = panel.classList.contains("collapsed") ? "⮞" : "⮝";
+          });
+        })();
+
+        // 面板拖曳（以標題列為把手；支援滑鼠與觸控）
+        (function makeDraggablePanel() {
+          const panel = document.getElementById("sidePanel");
+          const header = document.getElementById("panelHeader");
+          if (!panel || !header) return;
+
+          let startX=0, startY=0, startLeft=0, startTop=0, dragging=false;
+
+          function pointerDown(e){
+            dragging = true;
+            header.classList.add("dragging");
+
+            const rect = panel.getBoundingClientRect();
+            startLeft = rect.left; startTop = rect.top;
+
+            const p = ("touches" in e) ? e.touches[0] : e;
+            startX = p.clientX; startY = p.clientY;
+
+            panel.style.left = startLeft + "px";
+            panel.style.top  = startTop  + "px";
+            panel.style.right = "auto";
+
+            window.addEventListener("mousemove", pointerMove, {passive:false});
+            window.addEventListener("touchmove", pointerMove, {passive:false});
+            window.addEventListener("mouseup", pointerUp);
+            window.addEventListener("touchend", pointerUp);
+            e.preventDefault();
+          }
+
+          function pointerMove(e){
+            if (!dragging) return;
+            const p = ("touches" in e) ? e.touches[0] : e;
+            const dx = p.clientX - startX;
+            const dy = p.clientY - startY;
+
+            const win = document.documentElement.getBoundingClientRect();
+            const rect = panel.getBoundingClientRect();
+            let left = Math.min(Math.max(0, startLeft + dx), win.width  - rect.width);
+            let top  = Math.min(Math.max(0, startTop  + dy), win.height - rect.height);
+
+            panel.style.left = left + "px";
+            panel.style.top  = top  + "px";
+            e.preventDefault();
+          }
+
+          function pointerUp(){
+            dragging = false;
+            header.classList.remove("dragging");
+            window.removeEventListener("mousemove", pointerMove);
+            window.removeEventListener("touchmove", pointerMove);
+            window.removeEventListener("mouseup", pointerUp);
+            window.removeEventListener("touchend", pointerUp);
+          }
+
+          header.addEventListener("mousedown", pointerDown);
+          header.addEventListener("touchstart", pointerDown, {passive:false});
+        })();
+    </script>
+</body>
+</html>
